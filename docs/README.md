@@ -9,8 +9,13 @@ tasks. It supports two backends:
 
 The original code targeted Google's **PaLM `text-bison`** API and the **pre-1.0
 `openai`** SDK, both of which are retired. This repo has been migrated to current
-APIs. For the full investigation and benchmarks, see
-[`run-optimize-findings.md`](./run-optimize-findings.md).
+APIs.
+
+- **What is this actually doing?** (LLM-as-optimizer explained, plus how to
+  verify local/GPU usage, timing, and the datasets) →
+  [`how-it-works.md`](./how-it-works.md)
+- **Full migration log, benchmarks, and history** →
+  [`run-optimize-findings.md`](./run-optimize-findings.md)
 
 ---
 
@@ -91,8 +96,10 @@ OPENAI_DISABLE_THINKING=1
 ## Cloud mode
 
 - **Scorer** routes through `prompt_utils.call_palm_server_from_cloud`, which now
-  calls **Gemini** `generate_content` (`gemini-2.5-flash`) — the legacy PaLM
-  `text-bison` / `generateText` API is gone.
+  calls **Gemini** `generate_content` (`gemini-2.5-flash`) via the modern
+  **`google-genai`** SDK — the legacy PaLM `text-bison` / `generateText` API is
+  gone and the old `google-generativeai` package is deprecated. The key is set
+  with `prompt_utils.configure_genai(...)` (replacing `palm.configure(...)`).
 - **Optimizer** uses the **OpenAI v1** client (`chat.completions.create`).
 
 Provide `PALM_API_KEY` (Google Generative AI) and `OPENAI_API_KEY` (`sk-...`) in
@@ -163,9 +170,11 @@ For a smoke test, edit `opro/optimization/optimize_instructions.py`:
 ## Summary of changes from upstream OPRO
 
 - `opro/prompt_utils.py`
-  - Scorer (`call_palm_server_from_cloud`) → Gemini `generate_content`.
+  - Scorer (`call_palm_server_from_cloud`) → Gemini `generate_content` via the
+    `google-genai` SDK; `configure_genai()` replaces `palm.configure()`.
   - OpenAI calls → v1 client + v1 exceptions; fail-fast on auth errors.
   - `OPENAI_MODEL_OVERRIDE` / `OPENAI_DISABLE_THINKING` for local servers.
+- `pyproject.toml` — `google-generativeai` → `google-genai`.
 - `opro/optimization/optimize_instructions.py`,
   `opro/evaluation/evaluate_instructions.py`
   - Scorer/optimizer model partials → `gemini-2.5-flash`.

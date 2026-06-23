@@ -42,7 +42,6 @@ sys.path.insert(0, OPRO_ROOT_PATH)
 
 from absl import app
 from absl import flags
-import google.generativeai as palm
 import numpy as np
 import openai
 
@@ -90,7 +89,7 @@ def main(_):
     assert (
         palm_api_key
     ), "A PaLM API key is needed when prompting the text-bison model."
-    palm.configure(api_key=palm_api_key)
+    prompt_utils.configure_genai(palm_api_key)
 
   # =================== create the result directory ==========================
   datetime_str = (

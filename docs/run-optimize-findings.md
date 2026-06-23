@@ -283,6 +283,24 @@ End-to-end through `prompt_utils.call_openai_server_func`: scorer-style call
   env support so OpenAI-path calls can target a local OpenAI-compatible server.
 - `.mise.toml` — added `[tasks.optimize-local]` and `[tasks.evaluate-local]`.
 
+## SDK migration: `google-generativeai` → `google-genai`
+
+The deprecated `google-generativeai` package (imported as `palm`) was replaced
+with the modern **`google-genai`** SDK (installed `2.9.0`):
+
+- `prompt_utils`: `from google import genai` + `from google.genai import types`;
+  added `configure_genai(api_key)` (stores the key) and a lazy
+  `_get_genai_client()` singleton. `call_palm_server_from_cloud` now calls
+  `client.models.generate_content(model=, contents=, config=GenerateContentConfig(...))`.
+- All four scripts (`optimize_instructions`, `evaluate_instructions`,
+  `optimize_tsp`, `optimize_linear_regression`): dropped
+  `import google.generativeai as palm`; `palm.configure(api_key=...)` →
+  `prompt_utils.configure_genai(api_key)`.
+- `pyproject.toml`: `google-generativeai>=0.8.6` → `google-genai>=1.0.0`.
+
+Verified: a live scorer call returns `['No.']` in ~2.3 s with **no
+`FutureWarning`** (the deprecation notice is gone).
+
 ## Open action items
 
 1. **Revoke/rotate** the exposed Google key `AQ.Ab8…` (it still works).

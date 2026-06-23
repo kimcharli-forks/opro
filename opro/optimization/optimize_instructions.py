@@ -53,7 +53,6 @@ sys.path.insert(0, OPRO_ROOT_PATH)
 
 from absl import app
 from absl import flags
-import google.generativeai as palm
 import numpy as np
 import openai
 from opro import prompt_utils
@@ -196,7 +195,7 @@ def main(_):
     assert (
         palm_api_key
     ), "A PaLM API key is needed when prompting the text-bison model."
-    palm.configure(api_key=palm_api_key)
+    prompt_utils.configure_genai(palm_api_key)
 
   if optimizer_llm_name in {"gpt-3.5-turbo", "gpt-4"}:
     assert openai_api_key, "The OpenAI API key must be provided."
@@ -206,7 +205,7 @@ def main(_):
     assert (
         palm_api_key
     ), "A PaLM API key is needed when prompting the text-bison model."
-    palm.configure(api_key=palm_api_key)
+    prompt_utils.configure_genai(palm_api_key)
 
   if dataset_name == "mmlu":
     root_data_folder_path = os.path.join(ROOT_DATA_FOLDER_PATH, "MMLU-data")
@@ -641,7 +640,7 @@ def main(_):
     train_ratio = 0.8
     eval_ratio = 0.2
   elif dataset_name == "gsm8k":
-    train_ratio = 0.035
+    train_ratio = 0.003  # SMOKE TEST (was 0.035)
     eval_ratio = 0
   else:
     assert dataset_name == "bbh"
@@ -704,8 +703,8 @@ def main(_):
   # edit the value of the variable below, instead of editing the number of
   # decodes in model parameters, because those values are limited by model
   # serving configs.
-  num_generated_instructions_in_each_step = 8
-  num_search_steps = 200
+  num_generated_instructions_in_each_step = 3  # SMOKE TEST (was 8)
+  num_search_steps = 3  # SMOKE TEST (was 200)
 
   initial_instructions = [
       "Let's solve the problem.",

@@ -15,8 +15,40 @@
 
 import os
 import time
-import google.generativeai as palm
+from google import genai
+from google.genai import types
 import openai
+
+
+_genai_client = None
+_genai_api_key = None
+
+
+def configure_genai(api_key):
+  """Store the Gemini API key for the lazily-created google-genai client.
+
+  Replaces the old global ``palm.configure(api_key=...)``. The client is
+  rebuilt on the next call so a newly provided key takes effect.
+  """
+  global _genai_api_key, _genai_client
+  _genai_api_key = api_key
+  _genai_client = None
+
+
+def _get_genai_client():
+  """Lazily build a singleton google-genai client.
+
+  Uses the key from :func:`configure_genai` if set; otherwise the SDK falls
+  back to the ``GOOGLE_API_KEY`` / ``GEMINI_API_KEY`` environment variables.
+  """
+  global _genai_client
+  if _genai_client is None:
+    _genai_client = (
+        genai.Client(api_key=_genai_api_key)
+        if _genai_api_key
+        else genai.Client()
+    )
+  return _genai_client
 
 
 _openai_client = None
@@ -149,29 +181,29 @@ def call_openai_server_func(
 def call_palm_server_from_cloud(
     input_text, model="gemini-2.5-flash", max_decode_steps=20, temperature=0.8
 ):
-  """Calling a Gemini model via the Google Generative AI Cloud API.
+  """Calling a Gemini model via the google-genai Cloud API.
 
   The legacy PaLM `text-bison` / `generateText` API has been retired by Google,
-  so this routes through Gemini's `generate_content` instead. The function
-  signature and list-of-strings return value are kept for drop-in compatibility
-  with the original text-bison caller.
+  so this routes through Gemini's `generate_content` instead. Uses the modern
+  `google-genai` SDK (the `google-generativeai` package is deprecated). The
+  function signature and list-of-strings return value are kept for drop-in
+  compatibility with the original text-bison caller.
   """
   assert isinstance(input_text, str)
-  generation_config = {
-      "temperature": temperature,
-      "max_output_tokens": max_decode_steps,
-  }
-  gen_model = palm.GenerativeModel(model)
+  generation_config = types.GenerateContentConfig(
+      temperature=temperature,
+      max_output_tokens=max_decode_steps,
+  )
   max_retries = 5
   for attempt in range(max_retries):
     try:
-      completion = gen_model.generate_content(
-          input_text, generation_config=generation_config
+      completion = _get_genai_client().models.generate_content(
+          model=model, contents=input_text, config=generation_config
       )
-      # `.text` raises if the response carries no usable text part (e.g. the
-      # output was empty or blocked); fall back to an empty string in that case.
+      # `.text` is None (or raises) when the response carries no usable text
+      # part (e.g. the output was empty or blocked); fall back to "".
       try:
-        output_text = completion.text
+        output_text = completion.text or ""
       except (ValueError, AttributeError):
         output_text = ""
       return [output_text]
