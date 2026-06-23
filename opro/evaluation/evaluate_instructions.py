@@ -258,7 +258,7 @@ def main(_):
 
     call_scorer_finetuned_palm_server_func = functools.partial(
         prompt_utils.call_palm_server_from_cloud,
-        model="text-bison-001",
+        model="gemini-2.5-flash",
         temperature=scorer_finetuned_palm_dict["temperature"],
         max_decode_steps=scorer_finetuned_palm_dict["max_decode_steps"],
     )

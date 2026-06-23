@@ -179,15 +179,40 @@ batched/parallel model serving that this adaptation does not replicate.
 
 ---
 
+## `mise run evaluate` task
+
+Added a `[tasks.evaluate]` task mirroring `optimize`, wrapping:
+
+```
+evaluate_instructions.py --scorer="text-bison" --dataset="gsm8k" --task="test" \
+  --instruction_pos="Q_begin" --evaluate_training_fold=false \
+  --evaluate_test_fold=true --palm_api_key=... --openai_api_key=...
+```
+
+- Shared config (`SCORER_TEXT`, `DATASET`, `INSTRUCTION_POS`, keys) comes from
+  the same `[env]` / `.mise.env` as `optimize`.
+- Evaluate-specific flags are literal in the task: `--task="test"`,
+  `--evaluate_training_fold=false`, `--evaluate_test_fold=true`.
+- `evaluate_instructions.py` used the same retired `text-bison-001` partial, so
+  it got the same one-line swap to `model="gemini-2.5-flash"`. The OpenAI scorer
+  path reuses the already-migrated `prompt_utils.call_openai_server_func`.
+
+Verified: `mise run evaluate` parses flags, passes config asserts, creates its
+result dir (`outputs/scorer-outputs/GSM8K-test-s-text-bison-<ts>/`), and enters
+the scoring loop calling Gemini. The full gsm8k **test** fold is 1,319 examples
+scored sequentially, so a complete run is slow/costly — stopped after confirming
+the pipeline works.
+
 ## Files changed in this session
 
-- `.mise.toml` — restored non-secret `[env]` config; added `_.file = ".mise.env"`.
+- `.mise.toml` — restored non-secret `[env]` config; added `_.file = ".mise.env"`;
+  added `[tasks.evaluate]`.
 - `opro/prompt_utils.py` — Gemini scorer (`call_palm_server_from_cloud`); OpenAI
   v1 client + v1 exceptions + fail-fast auth handling.
 - `opro/optimization/optimize_instructions.py` — scorer/optimizer partials point
   at `gemini-2.5-flash`.
-
-These changes were **not committed** — left in the working tree for review.
+- `opro/evaluation/evaluate_instructions.py` — scorer partial points at
+  `gemini-2.5-flash`.
 
 ## Open action items
 

@@ -14,3 +14,7 @@ _.file = ".mise.env"
 [tasks.optimize]
 description = "Run the instruction optimization script"
 run = "uv run opro/optimization/optimize_instructions.py --optimizer=\"${OPTIMIZER_GPT}\" --scorer=\"${SCORER_TEXT}\" --instruction_pos=\"${INSTRUCTION_POS}\" --dataset=\"${DATASET}\" --task=\"${TASK}\" --palm_api_key=\"${PALM_API_KEY}\" --openai_api_key=\"${OPENAI_API_KEY}\""
+
+[tasks.evaluate]
+description = "Evaluate instructions on the test fold"
+run = "uv run opro/evaluation/evaluate_instructions.py --scorer=\"${SCORER_TEXT}\" --dataset=\"${DATASET}\" --task=\"test\" --instruction_pos=\"${INSTRUCTION_POS}\" --evaluate_training_fold=false --evaluate_test_fold=true --palm_api_key=\"${PALM_API_KEY}\" --openai_api_key=\"${OPENAI_API_KEY}\""
