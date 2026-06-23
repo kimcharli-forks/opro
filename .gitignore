@@ -8,3 +8,4 @@ METADATA
 *.egg-info
 __pycache__/
 .mise.env
+.python-version
