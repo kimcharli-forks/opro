@@ -1,6 +1,16 @@
 [tools]
 python = "3.14"
 
+[env]
+# Non-secret run configuration (safe to commit)
+OPTIMIZER_GPT = "gpt-3.5-turbo"
+SCORER_TEXT = "text-bison"
+INSTRUCTION_POS = "Q_begin"
+DATASET = "gsm8k"
+TASK = "train"
+# Secrets (PALM_API_KEY, OPENAI_API_KEY) loaded from git-ignored .mise.env
+_.file = ".mise.env"
+
 [tasks.optimize]
 description = "Run the instruction optimization script"
 run = "uv run opro/optimization/optimize_instructions.py --optimizer=\"${OPTIMIZER_GPT}\" --scorer=\"${SCORER_TEXT}\" --instruction_pos=\"${INSTRUCTION_POS}\" --dataset=\"${DATASET}\" --task=\"${TASK}\" --palm_api_key=\"${PALM_API_KEY}\" --openai_api_key=\"${OPENAI_API_KEY}\""

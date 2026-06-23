@@ -18,12 +18,28 @@ import google.generativeai as palm
 import openai
 
 
+_openai_client = None
+
+
+def _get_openai_client():
+  """Lazily build a singleton OpenAI v1 client.
+
+  Uses ``openai.api_key`` if the caller set it (as optimize_instructions.py
+  does from the ``--openai_api_key`` flag); otherwise the client falls back to
+  the ``OPENAI_API_KEY`` environment variable.
+  """
+  global _openai_client
+  if _openai_client is None:
+    _openai_client = openai.OpenAI(api_key=getattr(openai, "api_key", None))
+  return _openai_client
+
+
 def call_openai_server_single_prompt(
     prompt, model="gpt-3.5-turbo", max_decode_steps=20, temperature=0.8
 ):
   """The function to call OpenAI server with an input string."""
   try:
-    completion = openai.ChatCompletion.create(
+    completion = _get_openai_client().chat.completions.create(
         model=model,
         temperature=temperature,
         max_tokens=max_decode_steps,
@@ -33,44 +49,47 @@ def call_openai_server_single_prompt(
     )
     return completion.choices[0].message.content
 
-  except openai.error.Timeout as e:
-    retry_time = e.retry_after if hasattr(e, "retry_after") else 30
+  except (openai.AuthenticationError, openai.PermissionDeniedError) as e:
+    # Bad/expired key or insufficient permissions — retrying cannot help, so
+    # fail fast instead of looping forever.
+    raise RuntimeError(
+        f"OpenAI authentication failed ({e}). Check OPENAI_API_KEY."
+    ) from e
+
+  except openai.APITimeoutError as e:
+    retry_time = getattr(e, "retry_after", None) or 30
     print(f"Timeout error occurred. Retrying in {retry_time} seconds...")
     time.sleep(retry_time)
     return call_openai_server_single_prompt(
-        prompt, max_decode_steps=max_decode_steps, temperature=temperature
+        prompt, model=model, max_decode_steps=max_decode_steps,
+        temperature=temperature
     )
 
-  except openai.error.RateLimitError as e:
-    retry_time = e.retry_after if hasattr(e, "retry_after") else 30
+  except openai.RateLimitError as e:
+    retry_time = getattr(e, "retry_after", None) or 30
     print(f"Rate limit exceeded. Retrying in {retry_time} seconds...")
     time.sleep(retry_time)
     return call_openai_server_single_prompt(
-        prompt, max_decode_steps=max_decode_steps, temperature=temperature
+        prompt, model=model, max_decode_steps=max_decode_steps,
+        temperature=temperature
     )
 
-  except openai.error.APIError as e:
-    retry_time = e.retry_after if hasattr(e, "retry_after") else 30
-    print(f"API error occurred. Retrying in {retry_time} seconds...")
-    time.sleep(retry_time)
-    return call_openai_server_single_prompt(
-        prompt, max_decode_steps=max_decode_steps, temperature=temperature
-    )
-
-  except openai.error.APIConnectionError as e:
-    retry_time = e.retry_after if hasattr(e, "retry_after") else 30
+  except openai.APIConnectionError as e:
+    retry_time = getattr(e, "retry_after", None) or 30
     print(f"API connection error occurred. Retrying in {retry_time} seconds...")
     time.sleep(retry_time)
     return call_openai_server_single_prompt(
-        prompt, max_decode_steps=max_decode_steps, temperature=temperature
+        prompt, model=model, max_decode_steps=max_decode_steps,
+        temperature=temperature
     )
 
-  except openai.error.ServiceUnavailableError as e:
-    retry_time = e.retry_after if hasattr(e, "retry_after") else 30
-    print(f"Service unavailable. Retrying in {retry_time} seconds...")
+  except openai.APIError as e:
+    retry_time = getattr(e, "retry_after", None) or 30
+    print(f"API error occurred. Retrying in {retry_time} seconds...")
     time.sleep(retry_time)
     return call_openai_server_single_prompt(
-        prompt, max_decode_steps=max_decode_steps, temperature=temperature
+        prompt, model=model, max_decode_steps=max_decode_steps,
+        temperature=temperature
     )
 
   except OSError as e:
@@ -80,7 +99,8 @@ def call_openai_server_single_prompt(
     )
     time.sleep(retry_time)
     return call_openai_server_single_prompt(
-        prompt, max_decode_steps=max_decode_steps, temperature=temperature
+        prompt, model=model, max_decode_steps=max_decode_steps,
+        temperature=temperature
     )
 
 
@@ -103,30 +123,41 @@ def call_openai_server_func(
 
 
 def call_palm_server_from_cloud(
-    input_text, model="text-bison-001", max_decode_steps=20, temperature=0.8
+    input_text, model="gemini-2.5-flash", max_decode_steps=20, temperature=0.8
 ):
-  """Calling the text-bison model from Cloud API."""
+  """Calling a Gemini model via the Google Generative AI Cloud API.
+
+  The legacy PaLM `text-bison` / `generateText` API has been retired by Google,
+  so this routes through Gemini's `generate_content` instead. The function
+  signature and list-of-strings return value are kept for drop-in compatibility
+  with the original text-bison caller.
+  """
   assert isinstance(input_text, str)
-  assert model == "text-bison-001"
-  all_model_names = [
-      m
-      for m in palm.list_models()
-      if "generateText" in m.supported_generation_methods
-  ]
-  model_name = all_model_names[0].name
-  try:
-    completion = palm.generate_text(
-        model=model_name,
-        prompt=input_text,
-        temperature=temperature,
-        max_output_tokens=max_decode_steps,
-    )
-    output_text = completion.result
-    return [output_text]
-  except:  # pylint: disable=bare-except
-    retry_time = 10  # Adjust the retry time as needed
-    print(f"Retrying in {retry_time} seconds...")
-    time.sleep(retry_time)
-    return call_palm_server_from_cloud(
-        input_text, max_decode_steps=max_decode_steps, temperature=temperature
-    )
+  generation_config = {
+      "temperature": temperature,
+      "max_output_tokens": max_decode_steps,
+  }
+  gen_model = palm.GenerativeModel(model)
+  max_retries = 5
+  for attempt in range(max_retries):
+    try:
+      completion = gen_model.generate_content(
+          input_text, generation_config=generation_config
+      )
+      # `.text` raises if the response carries no usable text part (e.g. the
+      # output was empty or blocked); fall back to an empty string in that case.
+      try:
+        output_text = completion.text
+      except (ValueError, AttributeError):
+        output_text = ""
+      return [output_text]
+    except Exception as e:  # pylint: disable=broad-except
+      retry_time = 10  # Adjust the retry time as needed
+      print(
+          f"Gemini call error ({e}). Retrying in {retry_time} seconds "
+          f"(attempt {attempt + 1}/{max_retries})..."
+      )
+      time.sleep(retry_time)
+  raise RuntimeError(
+      f"Gemini call failed after {max_retries} retries for model {model!r}."
+  )
