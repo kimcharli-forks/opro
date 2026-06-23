@@ -203,6 +203,72 @@ the scoring loop calling Gemini. The full gsm8k **test** fold is 1,319 examples
 scored sequentially, so a complete run is slow/costly — stopped after confirming
 the pipeline works.
 
+## Running fully local (replacing OpenAI / Gemini with a local LLM)
+
+A local OpenAI-compatible server (MLX, at `http://127.0.0.1:8000/v1`) can serve
+**both** the optimizer and the scorer, removing all cloud APIs.
+
+### How it works (no assertion surgery)
+
+Both roles keep the **logical** name `gpt-3.5-turbo` (so the existing GPT-path
+parsing logic stays valid); only the endpoint and model id are redirected via
+env vars read by `prompt_utils`:
+
+- `OPENAI_BASE_URL` — read by the OpenAI SDK; points the client at the local server.
+- `OPENAI_MODEL_OVERRIDE` — replaces the model string in every OpenAI call with
+  the local model id (the script still thinks it's `gpt-3.5-turbo`).
+- `OPENAI_DISABLE_THINKING` — when set, sends
+  `extra_body={"chat_template_kwargs": {"enable_thinking": False}}` so reasoning
+  models answer in ~1 token instead of hundreds. Only sent when the flag is set
+  (the hosted OpenAI API rejects this field).
+
+`.mise.env` (git-ignored) for local mode:
+```
+OPENAI_BASE_URL=http://127.0.0.1:8000/v1
+OPENAI_API_KEY='zaq1@WSXcde3$RFV'      # single-quote! see gotcha below
+OPENAI_MODEL_OVERRIDE=Qwen3.6-27B-OptiQ-4bit
+OPENAI_DISABLE_THINKING=1
+```
+
+Tasks: `mise run optimize-local` / `mise run evaluate-local` set both
+`--scorer` and `--optimizer` to `gpt-3.5-turbo` (→ local). The plain
+`optimize`/`evaluate` tasks keep `text-bison` (→ Gemini) as the scorer.
+
+> **Global redirect:** because `OPENAI_BASE_URL` lives in `.mise.env`, *every*
+> OpenAI-path call routes to the local server while it's set — including the
+> optimizer of the plain `optimize`/`evaluate` tasks. Remove that line to return
+> to cloud OpenAI.
+
+### Latency findings (warm vs. thinking)
+
+Probed against the local server (yes/no prompt, `max_tokens=1024`):
+
+| Model | Thinking | Time | Out tokens | Verdict |
+|-------|----------|------|-----------|---------|
+| `Qwen3.6-27B-OptiQ-4bit` | on (default) | ~14 s | 221 | unusable for scorer |
+| `Qwen3.6-27B-OptiQ-4bit` | **off** | **0.7 s** | 1 | ✅ best — used for both roles |
+| `gemma-4-12B-it-qat-4bit` | n/a | ~9 s (incl. load) | 2 | ok but slower |
+| `Llama-3.2-3B-Instruct-4bit` | n/a | ~1.4 s | 2 | fast but weak on math |
+| `gemma-4-E4B-it-MLX-4bit` | — | ~14 s | 108 | verbose/slow |
+
+End-to-end through `prompt_utils.call_openai_server_func`: scorer-style call
+`['No']`, optimizer-style call produced a real instruction in ~1.8 s warm.
+
+### Gotchas
+
+- **`$` in the key:** mise's dotenv parser expands `$RFV` in
+  `zaq1@WSXcde3$RFV`, silently truncating the key to 12 chars → 401. **Single-quote
+  the value** in `.mise.env`.
+- **Single loaded model:** the server swaps models when the `model` id changes
+  (cold-load cost). OPRO hammers one model, so keep `OPENAI_MODEL_OVERRIDE` the
+  same for both roles — alternating ids would reload on every call.
+- **Local OpenAI key replaced the cloud one:** `.mise.env`'s `OPENAI_API_KEY` was
+  overwritten with the local server key, so the cloud OpenAI key (`sk-proj-…`) is
+  no longer present there; re-add it if you want cloud mode back.
+- **Scorer volume is still the wall:** even at ~1 s/call, the full 200-step gsm8k
+  optimize is ~400k scorer calls ≈ multiple days. Use the smoke-test sizing
+  above for local runs.
+
 ## Files changed in this session
 
 - `.mise.toml` — restored non-secret `[env]` config; added `_.file = ".mise.env"`;
@@ -213,6 +279,9 @@ the pipeline works.
   at `gemini-2.5-flash`.
 - `opro/evaluation/evaluate_instructions.py` — scorer partial points at
   `gemini-2.5-flash`.
+- `opro/prompt_utils.py` — `OPENAI_MODEL_OVERRIDE` + `OPENAI_DISABLE_THINKING`
+  env support so OpenAI-path calls can target a local OpenAI-compatible server.
+- `.mise.toml` — added `[tasks.optimize-local]` and `[tasks.evaluate-local]`.
 
 ## Open action items
 

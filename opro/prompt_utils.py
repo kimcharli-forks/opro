@@ -13,6 +13,7 @@
 # limitations under the License.
 """The utility functions for prompting GPT and Google Cloud models."""
 
+import os
 import time
 import google.generativeai as palm
 import openai
@@ -27,6 +28,10 @@ def _get_openai_client():
   Uses ``openai.api_key`` if the caller set it (as optimize_instructions.py
   does from the ``--openai_api_key`` flag); otherwise the client falls back to
   the ``OPENAI_API_KEY`` environment variable.
+
+  The base URL is read from the ``OPENAI_BASE_URL`` environment variable by the
+  SDK, so pointing it at a local OpenAI-compatible server (e.g. an MLX/LM Studio
+  endpoint at http://127.0.0.1:8000/v1) requires no code change here.
   """
   global _openai_client
   if _openai_client is None:
@@ -37,7 +42,25 @@ def _get_openai_client():
 def call_openai_server_single_prompt(
     prompt, model="gpt-3.5-turbo", max_decode_steps=20, temperature=0.8
 ):
-  """The function to call OpenAI server with an input string."""
+  """The function to call OpenAI (or an OpenAI-compatible server) with a prompt.
+
+  If ``OPENAI_MODEL_OVERRIDE`` is set, it replaces ``model`` for the actual API
+  call. This lets the OPRO scripts keep using the logical name ``gpt-3.5-turbo``
+  (so all the GPT-path parsing logic stays valid) while the request is served by
+  whatever model a local endpoint has loaded, e.g. ``Qwen3.6-27B-OptiQ-4bit``.
+
+  If ``OPENAI_DISABLE_THINKING`` is truthy, the request asks the server to turn
+  off "thinking" tokens (``chat_template_kwargs={"enable_thinking": False}``),
+  which makes reasoning models like Qwen3 answer in ~1 token instead of
+  hundreds — essential for the high-volume scorer role. This extra field is only
+  sent when the flag is set, since the hosted OpenAI API rejects unknown params.
+  """
+  model = os.environ.get("OPENAI_MODEL_OVERRIDE") or model
+  extra_kwargs = {}
+  if os.environ.get("OPENAI_DISABLE_THINKING"):
+    extra_kwargs["extra_body"] = {
+        "chat_template_kwargs": {"enable_thinking": False}
+    }
   try:
     completion = _get_openai_client().chat.completions.create(
         model=model,
@@ -46,6 +69,7 @@ def call_openai_server_single_prompt(
         messages=[
             {"role": "user", "content": prompt},
         ],
+        **extra_kwargs,
     )
     return completion.choices[0].message.content
 

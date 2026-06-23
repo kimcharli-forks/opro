@@ -18,3 +18,18 @@ run = "uv run opro/optimization/optimize_instructions.py --optimizer=\"${OPTIMIZ
 [tasks.evaluate]
 description = "Evaluate instructions on the test fold"
 run = "uv run opro/evaluation/evaluate_instructions.py --scorer=\"${SCORER_TEXT}\" --dataset=\"${DATASET}\" --task=\"test\" --instruction_pos=\"${INSTRUCTION_POS}\" --evaluate_training_fold=false --evaluate_test_fold=true --palm_api_key=\"${PALM_API_KEY}\" --openai_api_key=\"${OPENAI_API_KEY}\""
+
+# --- Fully-local variants -------------------------------------------------
+# Both scorer and optimizer use the logical name "gpt-3.5-turbo" so the GPT
+# code path is taken; the request is redirected to a local OpenAI-compatible
+# server via these vars in .mise.env (git-ignored):
+#   OPENAI_BASE_URL=http://127.0.0.1:8000/v1
+#   OPENAI_API_KEY=<local server key>
+#   OPENAI_MODEL_OVERRIDE=<loaded model id, e.g. Qwen3.6-27B-OptiQ-4bit>
+[tasks.optimize-local]
+description = "Run optimization fully on the local OpenAI-compatible server"
+run = "uv run opro/optimization/optimize_instructions.py --optimizer=\"gpt-3.5-turbo\" --scorer=\"gpt-3.5-turbo\" --instruction_pos=\"${INSTRUCTION_POS}\" --dataset=\"${DATASET}\" --task=\"${TASK}\" --openai_api_key=\"${OPENAI_API_KEY}\""
+
+[tasks.evaluate-local]
+description = "Evaluate on the test fold fully on the local OpenAI-compatible server"
+run = "uv run opro/evaluation/evaluate_instructions.py --scorer=\"gpt-3.5-turbo\" --dataset=\"${DATASET}\" --task=\"test\" --instruction_pos=\"${INSTRUCTION_POS}\" --evaluate_training_fold=false --evaluate_test_fold=true --openai_api_key=\"${OPENAI_API_KEY}\""
