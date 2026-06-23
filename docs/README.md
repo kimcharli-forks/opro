@@ -11,6 +11,8 @@ The original code targeted Google's **PaLM `text-bison`** API and the **pre-1.0
 `openai`** SDK, both of which are retired. This repo has been migrated to current
 APIs.
 
+- **Current status / where to resume** (open items, gotchas, how to pick up) →
+  [`STATUS.md`](./STATUS.md)
 - **What is this actually doing?** (LLM-as-optimizer explained, plus how to
   verify local/GPU usage, timing, and the datasets) →
   [`how-it-works.md`](./how-it-works.md)
